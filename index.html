@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Separador de Pólizas y Generador de Excel</title>
+    <style>
+        :root {
+            --primary-color: #2563eb;
+            --hover-color: #1d4ed8;
+            --bg-color: #f3f4f6;
+            --card-bg: #ffffff;
+            --text-color: #1f2937;
+            --excel-color: #10b981;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 2rem;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .container {
+            background-color: var(--card-bg);
+            padding: 2.5rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            width: 100%;
+            max-width: 600px;
+        }
+        h1 {
+            margin-top: 0;
+            font-size: 1.5rem;
+            text-align: center;
+            color: var(--primary-color);
+        }
+        p {
+            text-align: center;
+            color: #4b5563;
+            font-size: 0.95rem;
+            margin-bottom: 2rem;
+        }
+        .file-input-wrapper {
+            border: 2px dashed #cbd5e1;
+            padding: 2rem;
+            text-align: center;
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+            transition: all 0.3s ease;
+        }
+        .file-input-wrapper:hover {
+            border-color: var(--primary-color);
+            background-color: #eff6ff;
+        }
+        input[type="file"] {
+            display: none;
+        }
+        label.custom-file-upload {
+            background-color: #e5e7eb;
+            color: #374151;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            display: inline-block;
+            margin-bottom: 10px;
+        }
+        #fileName {
+            display: block;
+            margin-top: 10px;
+            font-size: 0.9rem;
+            color: var(--excel-color);
+            font-weight: bold;
+        }
+        button {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            width: 100%;
+            border-radius: 6px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: var(--hover-color);
+        }
+        button:disabled {
+            background-color: #9ca3af;
+            cursor: not-allowed;
+        }
+        #status {
+            margin-top: 1.5rem;
+            padding: 1rem;
+            border-radius: 6px;
+            background-color: #f8fafc;
+            border: 1px solid #e2e8f0;
+            font-size: 0.9rem;
+            max-height: 250px;
+            overflow-y: auto;
+        }
+        .log-entry { margin-bottom: 4px; border-bottom: 1px solid #f1f5f9; padding-bottom: 2px; }
+        .log-success { color: #059669; font-weight: 500;}
+        .log-excel { color: var(--excel-color); font-weight: bold;}
+        .log-warning { color: #d97706; }
+        .log-error { color: #dc2626; font-weight: bold;}
+    </style>
+
+    <!-- Librerías de PDF, ZIP y EXCEL -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Separador Automático + Excel</h1>
+        <p>Selecciona el PDF de la flotilla. El sistema extraerá las pólizas y generará un archivo ZIP que incluye todos los PDFs separados y un reporte en Excel.</p>
+
+        <div class="file-input-wrapper">
+            <label class="custom-file-upload">
+                <input type="file" id="pdfInput" accept=".pdf" onchange="showFileName()">
+                Seleccionar archivo PDF
+            </label>
+            <span id="fileName">Ningún archivo seleccionado</span>
+        </div>
+
+        <button id="processBtn" onclick="processPDF()">Procesar, Crear Excel y Descargar</button>
+
+        <div id="status" style="display: none;"></div>
+    </div>
+
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+
+        function showFileName() {
+            const input = document.getElementById('pdfInput');
+            const fileNameDisplay = document.getElementById('fileName');
+            if (input.files.length > 0) {
+                fileNameDisplay.textContent = 'Archivo listo: ' + input.files[0].name;
+            } else {
+                fileNameDisplay.textContent = 'Ningún archivo seleccionado';
+            }
+        }
+
+        function logStatus(message, type = 'normal') {
+            const statusDiv = document.getElementById('status');
+            statusDiv.style.display = 'block';
+            const p = document.createElement('div');
+            p.className = `log-entry log-${type}`;
+            p.textContent = message;
+            statusDiv.appendChild(p);
+            statusDiv.scrollTop = statusDiv.scrollHeight;
+        }
+
+        async function processPDF() {
+            const fileInput = document.getElementById('pdfInput');
+            const btn = document.getElementById('processBtn');
+            const statusDiv = document.getElementById('status');
+
+            if (!fileInput.files.length) {
+                alert('Por favor, selecciona un archivo PDF primero.');
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = 'Procesando... (Puede tardar varios minutos)';
+            statusDiv.innerHTML = '';
+
+            try {
+                const file = fileInput.files[0];
+                const arrayBuffer = await file.arrayBuffer();
+
+                logStatus(`Cargando documento para lectura...`, 'normal');
+                const pdfTextDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                const numPages = pdfTextDoc.numPages;
+                
+                logStatus(`Cargando documento para separación...`, 'normal');
+                const pdfLibDoc = await PDFLib.PDFDocument.load(arrayBuffer);
+
+                const zip = new JSZip();
+                logStatus(`Total de páginas detectadas: ${numPages}`, 'success');
+
+                let nombresUsados = {}; 
+                let excelData = []; 
+
+                for (let i = 1; i <= numPages; i++) {
+                    const page = await pdfTextDoc.getPage(i);
+                    const textContent = await page.getTextContent();
+                    
+                    const pageText = textContent.items.map(item => item.str).join(' ');
+                    const cleanText = textContent.items.map(item => item.str).join(''); 
+
+                    // 1. EXTRACCIÓN DE NÚMERO ECONÓMICO
+                    let regexEco = /No\.?\s*Econ[oó]mico\s*:?\s*([A-Z0-9\-]+)/i;
+                    let matchEco = pageText.match(regexEco) || cleanText.match(regexEco);
+                    let baseFileName = ""; 
+
+                    if (matchEco && matchEco[1]) {
+                        baseFileName = matchEco[1].trim();
+                        baseFileName = baseFileName.replace(/(Color|Ocupantes|Placas|Desde|Hasta|Serie|Motor|Tipo|Carga|Modelo|Uso).*/i, '');
+                        if (/\d{6,}$/.test(baseFileName)) {
+                            baseFileName = baseFileName.slice(0, -5);
+                        }
+                        baseFileName = baseFileName.replace(/-$/, ''); 
+                        
+                        logStatus(`Página ${i} -> Póliza extraída: ${baseFileName}`, 'success');
+                    } else {
+                        if (pageText.includes("ESTA POLIZA AMPARA") || pageText.includes("INFORMACIÓN IMPORTANTE")) {
+                            baseFileName = `Caratula_General_Pagina_${i}`;
+                            logStatus(`Página ${i} -> Carátula General guardada`, 'normal');
+                        } else {
+                            baseFileName = `Poliza_Sin_No_Economico_Pagina_${i}`;
+                            logStatus(`Página ${i} -> No se detectó ID.`, 'warning');
+                        }
+                    }
+
+                    // 2. EXTRACCIÓN DE PÓLIZA, ENDOSO E INCISO
+                    let poliza = "No encontrada";
+                    let endoso = "No encontrado";
+                    let inciso = "No encontrado";
+
+                    // Patrón matemático: 10 dígitos (Poliza), espacios/barras, 6 dígitos (Endoso), espacios/barras, 4 dígitos (Inciso)
+                    let regexPolizaInciso = /(\d{10})\s*\|?\s*(\d{6})\s*\|?\s*(\d{4})/;
+                    let matchPoliza = pageText.match(regexPolizaInciso) || cleanText.match(regexPolizaInciso);
+
+                    if (matchPoliza) {
+                        poliza = matchPoliza[1];
+                        endoso = matchPoliza[2];
+                        inciso = matchPoliza[3];
+                    }
+
+                    // Validamos que no se agreguen las carátulas iniciales al Excel
+                    if (!baseFileName.includes("Caratula_General") && !baseFileName.includes("Poliza_Sin_No_Economico")) {
+                        // Se guarda en el arreglo (agregamos un espacio invisible al inicio para forzar a Excel a tratarlo como texto y no borrar ceros)
+                        excelData.push({
+                            "No. Económico": baseFileName,
+                            "No. de Póliza": "\u200C" + poliza,
+                            "Endoso": "\u200C" + endoso,
+                            "Inciso": "\u200C" + inciso
+                        });
+                    }
+
+                    // 3. PREVENCIÓN DE DUPLICADOS PARA PDFs
+                    let fileNameForPdf = baseFileName;
+                    if (nombresUsados[fileNameForPdf]) {
+                        nombresUsados[fileNameForPdf]++;
+                        fileNameForPdf = `${fileNameForPdf}_(${nombresUsados[fileNameForPdf]})`;
+                    } else {
+                        nombresUsados[fileNameForPdf] = 1;
+                    }
+
+                    // 4. CREAR PDF Y AGREGAR AL ZIP
+                    const newPdf = await PDFLib.PDFDocument.create();
+                    const [copiedPage] = await newPdf.copyPages(pdfLibDoc, [i - 1]);
+                    newPdf.addPage(copiedPage);
+                    const newPdfBytes = await newPdf.save();
+                    zip.file(`${fileNameForPdf}.pdf`, newPdfBytes);
+                }
+
+                // 5. CREACIÓN DEL ARCHIVO EXCEL
+                if (excelData.length > 0) {
+                    logStatus(`Generando reporte Excel con ${excelData.length} registros...`, 'log-excel');
+                    
+                    const worksheet = XLSX.utils.json_to_sheet(excelData);
+                    const workbook = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(workbook, worksheet, "Reporte Polizas");
+                    
+                    const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+                    zip.file("Reporte_Polizas.xlsx", excelBuffer);
+                    logStatus('Excel agregado al ZIP correctamente.', 'success');
+                }
+
+                logStatus('Empaquetando todo en el archivo ZIP...', 'normal');
+                const zipBlob = await zip.generateAsync({ type: 'blob' });
+                saveAs(zipBlob, `Polizas_y_Reporte_El_Bisonte.zip`);
+
+                logStatus('¡Proceso finalizado! Tu descarga ha comenzado.', 'success');
+
+            } catch (error) {
+                console.error(error);
+                logStatus(`Error: ${error.message}`, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Procesar, Crear Excel y Descargar';
+            }
+        }
+    </script>
+</body>
+</html>
