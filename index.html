@@ -112,7 +112,6 @@
         .log-error { color: #dc2626; font-weight: bold;}
     </style>
 
-    <!-- Librerías de PDF, ZIP y EXCEL -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
     <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -212,7 +211,7 @@
                         }
                         baseFileName = baseFileName.replace(/-$/, ''); 
                         
-                        logStatus(`Página ${i} -> Póliza extraída: ${baseFileName}`, 'success');
+                        logStatus(`Página ${i} -> Unidad extraída: ${baseFileName}`, 'success');
                     } else {
                         if (pageText.includes("ESTA POLIZA AMPARA") || pageText.includes("INFORMACIÓN IMPORTANTE")) {
                             baseFileName = `Caratula_General_Pagina_${i}`;
@@ -223,28 +222,30 @@
                         }
                     }
 
-                    // 2. EXTRACCIÓN DE PÓLIZA, ENDOSO E INCISO
+                    // 2. EXTRACCIÓN DE PÓLIZA E INCISO A PRUEBA DE FALLOS
                     let poliza = "No encontrada";
-                    let endoso = "No encontrado";
                     let inciso = "No encontrado";
 
-                    // Patrón matemático: 10 dígitos (Poliza), espacios/barras, 6 dígitos (Endoso), espacios/barras, 4 dígitos (Inciso)
-                    let regexPolizaInciso = /(\d{10})\s*\|?\s*(\d{6})\s*\|?\s*(\d{4})/;
-                    let matchPoliza = pageText.match(regexPolizaInciso) || cleanText.match(regexPolizaInciso);
+                    // Fórmula infalible: Busca 10 dígitos + Cualquier cosa que no sea número + 6 dígitos + Cualquier cosa que no sea número + 4 dígitos
+                    let regexPolizaInciso = /\b(\d{10})\b\D+(\d{6})\D+(\d{4})\b/;
+                    let matchPoliza = pageText.match(regexPolizaInciso);
+
+                    if (!matchPoliza) {
+                        // Plan de emergencia por si el lector pega todo el texto: "00055061670000000007"
+                        let regexPegados = /(\d{10})(\d{6})(\d{4})/;
+                        matchPoliza = cleanText.match(regexPegados);
+                    }
 
                     if (matchPoliza) {
                         poliza = matchPoliza[1];
-                        endoso = matchPoliza[2];
                         inciso = matchPoliza[3];
                     }
 
-                    // Validamos que no se agreguen las carátulas iniciales al Excel
+                    // Se agregan al arreglo de Excel ignorando las portadas generales
                     if (!baseFileName.includes("Caratula_General") && !baseFileName.includes("Poliza_Sin_No_Economico")) {
-                        // Se guarda en el arreglo (agregamos un espacio invisible al inicio para forzar a Excel a tratarlo como texto y no borrar ceros)
                         excelData.push({
                             "No. Económico": baseFileName,
                             "No. de Póliza": "\u200C" + poliza,
-                            "Endoso": "\u200C" + endoso,
                             "Inciso": "\u200C" + inciso
                         });
                     }
@@ -275,13 +276,13 @@
                     XLSX.utils.book_append_sheet(workbook, worksheet, "Reporte Polizas");
                     
                     const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
-                    zip.file("Reporte_Polizas.xlsx", excelBuffer);
+                    zip.file("Reporte_Polizas_El_Bisonte.xlsx", excelBuffer);
                     logStatus('Excel agregado al ZIP correctamente.', 'success');
                 }
 
                 logStatus('Empaquetando todo en el archivo ZIP...', 'normal');
                 const zipBlob = await zip.generateAsync({ type: 'blob' });
-                saveAs(zipBlob, `Polizas_y_Reporte_El_Bisonte.zip`);
+                saveAs(zipBlob, `Flotilla_Separada.zip`);
 
                 logStatus('¡Proceso finalizado! Tu descarga ha comenzado.', 'success');
 
